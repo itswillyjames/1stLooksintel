@@ -5,6 +5,17 @@
 
 ---
 
+## Quick Links
+
+- **Preview URL**: `https://intel-scope-1.preview.emergentagent.com`
+- **Test Command**: `cd /app/backend && python -m pytest tests/test_state_machines.py -v`
+- **State Machine Module**: `/app/backend/app/state_machine/`
+  - `enums.py` — Canonical status enums
+  - `validators.py` — Transition validators
+  - `events.py` — Event emission helpers
+
+---
+
 ## What Changed
 
 ### 1. State Machine Module Created (`/app/backend/app/state_machine/`)
@@ -371,8 +382,10 @@ Events are emitted in service layer (not API layer) to ensure all transitions—
 Report-level events use `report_id`, version-level events use `report_version_id`. This maintains clear separation between container (report) and execution (version).
 
 ### 5. Terminal States Philosophy
-- **Hard terminals** (no outgoing): archived, completed, failed, succeeded, delivered
-- **Soft terminals** (can retry): failed (for exports only - can retry rendering)
+- **Hard terminals** (no outgoing): archived, completed, succeeded, delivered
+- **Context-dependent terminals**:
+  - `failed` is terminal for report_versions and stage_attempts (no retry)
+  - `failed` allows retry for exports only (failed → rendering)
 
 ### 6. Error Response Structure
 Structured JSON with `error`, `from`, `to`, `reason` fields allows frontend to:
