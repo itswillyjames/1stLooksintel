@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import uuid
 import logging
 
+from app.state_machine import can_transition_permit, emit_status_change_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -141,4 +143,62 @@ async def get_permits(
 async def get_permit_by_id(db: AsyncIOMotorDatabase, permit_id: str) -> Optional[Dict[str, Any]]:
     """Get a single permit by ID."""
     permit = await db.permits.find_one({"_id": permit_id})
+
+
+async def transition_permit_status(
+    db: AsyncIOMotorDatabase,
+    permit_id: str,
+    to_status: str,
+    reason: str = ""
+) -> Dict[str, Any]:
+    """Transition permit to a new status with validation and event emission.
+    
+    Args:
+        db: MongoDB database
+        permit_id: Permit ID
+        to_status: Target status
+        reason: Optional reason for transition
+    
+    Returns:
+        Updated permit document
+    
+    Raises:
+        ValueError: If permit not found or transition invalid
+    """
+    # Get current permit
+    permit = await db.permits.find_one({"_id": permit_id})
+    if not permit:
+        raise ValueError(f"Permit {permit_id} not found")
+    
+    from_status = permit["status"]
+    
+    # Validate transition
+    is_valid, validation_reason = can_transition_permit(from_status, to_status)
+    if not is_valid:
+        raise ValueError(f"INVALID_TRANSITION: {validation_reason}")
+    
+    # Update status
+    now = datetime.now(timezone.utc).isoformat()
+    await db.permits.update_one(
+        {"_id": permit_id},
+        {"$set": {"status": to_status, "updated_at": now}}
+    )
+    
+    # Emit event
+    await emit_status_change_event(
+        db=db,
+        collection_name="permit_events",
+        entity_id_field="permit_id",
+        entity_id=permit_id,
+        from_status=from_status,
+        to_status=to_status,
+        reason=reason
+    )
+    
+    logger.info(f"Transitioned permit {permit_id}: {from_status} -> {to_status}")
+    
+    # Return updated permit
+    updated_permit = await db.permits.find_one({"_id": permit_id})
+    return updated_permit
+
     return permit

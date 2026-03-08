@@ -11,6 +11,12 @@ from datetime import datetime, timezone
 import uuid
 import logging
 
+from app.state_machine import (
+    can_transition_report,
+    can_transition_report_version,
+    emit_status_change_event
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -149,5 +155,133 @@ async def get_stage_attempts(
         {"report_version_id": report_version_id}
     ).sort("created_at", 1)
     
+
+
+async def transition_report_status(
+    db: AsyncIOMotorDatabase,
+    report_id: str,
+    to_status: str,
+    reason: str = ""
+) -> Dict[str, Any]:
+    """Transition report to a new status with validation and event emission.
+    
+    Args:
+        db: MongoDB database
+        report_id: Report ID
+        to_status: Target status
+        reason: Optional reason for transition
+    
+    Returns:
+        Updated report document
+    
+    Raises:
+        ValueError: If report not found or transition invalid
+    """
+    # Get current report
+    report = await db.reports.find_one({"_id": report_id})
+    if not report:
+        raise ValueError(f"Report {report_id} not found")
+    
+    from_status = report["status"]
+    
+    # Build context for validation
+    context = {
+        "has_active_version": report.get("active_version_id") is not None
+    }
+    
+    # Validate transition
+    is_valid, validation_reason = can_transition_report(from_status, to_status, context)
+    if not is_valid:
+        raise ValueError(f"INVALID_TRANSITION: {validation_reason}")
+    
+    # Update status
+    now = datetime.now(timezone.utc).isoformat()
+    await db.reports.update_one(
+        {"_id": report_id},
+        {"$set": {"status": to_status, "updated_at": now}}
+    )
+    
+    # Emit event (tied to report, but can reference active version if exists)
+    event_payload = {
+        "from_status": from_status,
+        "to_status": to_status,
+        "reason": reason
+    }
+    if report.get("active_version_id"):
+        event_payload["report_version_id"] = report["active_version_id"]
+    
+    await emit_status_change_event(
+        db=db,
+        collection_name="report_events",
+        entity_id_field="report_id",
+        entity_id=report_id,
+        from_status=from_status,
+        to_status=to_status,
+        reason=reason
+    )
+    
+    logger.info(f"Transitioned report {report_id}: {from_status} -> {to_status}")
+    
+    # Return updated report
+    updated_report = await db.reports.find_one({"_id": report_id})
+    return updated_report
+
+
+async def transition_report_version_status(
+    db: AsyncIOMotorDatabase,
+    version_id: str,
+    to_status: str,
+    reason: str = ""
+) -> Dict[str, Any]:
+    """Transition report version to a new status with validation and event emission.
+    
+    Args:
+        db: MongoDB database
+        version_id: Report version ID
+        to_status: Target status
+        reason: Optional reason for transition
+    
+    Returns:
+        Updated report version document
+    
+    Raises:
+        ValueError: If version not found or transition invalid
+    """
+    # Get current version
+    version = await db.report_versions.find_one({"_id": version_id})
+    if not version:
+        raise ValueError(f"Report version {version_id} not found")
+    
+    from_status = version["status"]
+    
+    # Validate transition
+    is_valid, validation_reason = can_transition_report_version(from_status, to_status)
+    if not is_valid:
+        raise ValueError(f"INVALID_TRANSITION: {validation_reason}")
+    
+    # Update status
+    now = datetime.now(timezone.utc).isoformat()
+    await db.report_versions.update_one(
+        {"_id": version_id},
+        {"$set": {"status": to_status, "updated_at": now}}
+    )
+    
+    # Emit event
+    await emit_status_change_event(
+        db=db,
+        collection_name="report_events",
+        entity_id_field="report_version_id",
+        entity_id=version_id,
+        from_status=from_status,
+        to_status=to_status,
+        reason=reason
+    )
+    
+    logger.info(f"Transitioned report version {version_id}: {from_status} -> {to_status}")
+    
+    # Return updated version
+    updated_version = await db.report_versions.find_one({"_id": version_id})
+    return updated_version
+
     attempts = await cursor.to_list(length=100)
     return attempts
