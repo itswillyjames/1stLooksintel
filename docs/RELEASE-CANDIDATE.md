@@ -7,6 +7,17 @@
 
 ---
 
+## Build Provenance
+
+| Field | Value |
+|-------|-------|
+| **Git Commit** | `2c7c365c647388d1be398c725a260a5d40cde3d6` |
+| **Git Tag** | `rc-v1.0` |
+| **Preview URL** | `https://intel-scope-1.preview.emergentagent.com` |
+| **Build Date** | 2026-03-08T21:15:00Z |
+
+---
+
 ## System Overview
 
 **Permit Intel** is a single-tenant, solo-operator permit intelligence workbench built for analyzing construction permits, extracting entities, and generating exportable dossiers.
