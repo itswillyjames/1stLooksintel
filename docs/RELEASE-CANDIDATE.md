@@ -1,6 +1,6 @@
 # Permit Intel - Release Candidate v1.0
 
-**Date:** 2025-01-XX  
+**Date:** 2026-03-08 (UTC)  
 **Status:** Release Candidate  
 **Backend Tests:** 40/40 passing  
 **Frontend Lint:** Clean
@@ -56,6 +56,11 @@
 
 ## API Route Inventory
 
+### Preferred vs Alias Routes
+
+> **Note:** Canonical routes are under `/api/reports/versions/{id}/...` for version-scoped operations.
+> Alias routes exist under `/api/exports/...` for convenience but prefer canonical routes in integrations.
+
 ### Permits API (`/api/permits`)
 
 | Method | Path | Description |
@@ -91,12 +96,12 @@
 | `POST` | `/api/entities/merge` | Merge two entities |
 | `POST` | `/api/entities/unmerge` | Reverse a merge |
 
-### Exports API (`/api/exports`)
+### Exports API (`/api/exports`) — Alias Routes
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/exports/{id}` | Get export (JSON or HTML) |
-| `GET` | `/api/exports/by-version/{id}` | List exports (alias) |
+| `GET` | `/api/exports/by-version/{id}` | List exports (alias for `/api/reports/versions/{id}/exports`) |
 
 ---
 
@@ -106,30 +111,30 @@
 
 | Collection | Purpose | Key Indexes |
 |------------|---------|-------------|
-| `permits` | Permit data | `city`, `status`, `source_permit_id` |
-| `permit_sources` | Data sources | `permit_id` |
-| `permit_events` | Audit trail | `permit_id`, `created_at` |
-| `reports` | Report metadata | `permit_id`, `status` |
-| `report_versions` | Immutable snapshots | `report_id`, `version` |
-| `report_events` | Audit trail | `report_id` |
-| `stage_attempts` | Pipeline runs | `report_version_id`, `stage_name`, `idempotency_key` (unique) |
+| `permits` | Permit data | `(city, filed_date)`, `(status, prequal_score)`, `address_norm`, `(city, source_permit_id)` unique |
+| `permit_sources` | Data sources | `permit_id`, `hash` |
+| `permit_events` | Audit trail | `(permit_id, created_at)` |
+| `reports` | Report metadata | `permit_id`, `(status, updated_at)` |
+| `report_versions` | Immutable snapshots | `(report_id, version)` unique, `(status, updated_at)` |
+| `report_events` | Audit trail | `(report_version_id, created_at)` |
+| `stage_attempts` | Pipeline runs | `(report_version_id, stage_name)`, `status`, `(report_version_id, stage_name, idempotency_key)` unique |
 | `stage_outputs` | Stage results | `stage_attempt_id` |
-| `stage_events` | Audit trail | `stage_attempt_id` |
-| `evidence_items` | Raw evidence | `item_type` |
-| `evidence_links` | Link evidence | `link_type`, `link_id` |
-| `derived_claims` | AI claims | `evidence_id` |
-| `entities` | Resolved entities | `canonical_name`, `status` |
+| `stage_events` | Audit trail | `(stage_attempt_id, created_at)` |
+| `evidence_items` | Raw evidence | `hash` |
+| `evidence_links` | Link evidence | `(link_type, link_id)`, `evidence_id` |
+| `derived_claims` | AI claims | `report_version_id` |
+| `entities` | Resolved entities | `canonical_name` |
 | `entity_aliases` | Name aliases | `entity_id`, `alias_norm` |
-| `entity_identifiers` | IDs (EIN, etc) | `entity_id`, `identifier_type` |
+| `entity_identifiers` | IDs (EIN, etc) | `entity_id`, `(id_type, id_value)` unique |
 | `entity_links` | Relationships | `from_entity_id`, `to_entity_id` |
 | `entity_match_suggestions` | Review queue | `report_version_id`, `status`, `alias_norm` |
 | `merge_ledger` | Merge history | `winner_entity_id`, `merged_entity_id` |
 | `unmerge_ledger` | Unmerge history | `merge_ledger_id` |
-| `operator_locks` | Lock flags | `target_type`, `target_id` |
-| `exports` | Export records | `report_version_id` + `export_type` + `template_version` (unique) |
-| `export_events` | Audit trail | `export_id` |
+| `operator_locks` | Lock flags | `(lock_type, lock_id)` unique |
+| `exports` | Export records | `(report_version_id, status)`, `(report_version_id, export_type, template_version)` unique |
+| `export_events` | Audit trail | `(export_id, created_at)` |
 | `report_outcomes` | Final outcomes | `report_id` |
-| `comparables` | Market comps | `entity_id` |
+| `comparables` | Market comps | `report_version_id` |
 
 ---
 
@@ -228,6 +233,10 @@ POST /api/reports/versions/{id}/exports/dossier/render
 4. **No Auth** - Single-tenant, no user authentication
 5. **No Real OSINT** - No external data enrichment yet
 6. **Entity Merge UI** - Read-only review queue (merge via API only)
+
+### Ops Notes
+
+- **Disable `/api/permits/seed` in production** via env flag (e.g., `DISABLE_SEED=true`) to prevent accidental data resets.
 
 ---
 
