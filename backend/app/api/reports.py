@@ -426,3 +426,104 @@ async def get_entity_suggestions_endpoint(
     
     return JSONResponse(content={"suggestions": result})
 
+
+# ============================================================================
+# EXPORT ENDPOINTS (canonical routes for dossier export)
+# ============================================================================
+
+from app.services.export_service import render_dossier_export, list_exports
+from app.models.export import ExportRenderRequest
+
+
+@router.post("/versions/{version_id}/exports/dossier/render")
+async def render_dossier_endpoint(
+    version_id: str = Path(...),
+    request: ExportRenderRequest = ExportRenderRequest()
+):
+    """Render HTML dossier export for a report version.
+    
+    Creates an HTML dossier with:
+    - Permit information from snapshot
+    - Scope summary (if stage completed)
+    - Extracted entities
+    - Entity match suggestions
+    
+    IDEMPOTENT: Same (report_version_id, export_type='html_dossier', template_version)
+    returns the existing export without re-rendering.
+    
+    - **version_id**: Report version ID
+    - **template_version**: Template version (default: 'v1')
+    - **idempotency_key**: Optional custom idempotency key
+    
+    Returns:
+        {
+            "export": {...},
+            "is_rerun": bool
+        }
+    """
+    db = get_db()
+    
+    try:
+        result = await render_dossier_export(
+            db=db,
+            report_version_id=version_id,
+            template_version=request.template_version,
+            idempotency_key=request.idempotency_key
+        )
+        
+        export = result["export"]
+        return JSONResponse(content={
+            "export": {
+                "id": export["_id"],
+                "report_version_id": export["report_version_id"],
+                "export_type": export["export_type"],
+                "template_version": export["template_version"],
+                "status": export["status"],
+                "manifest": export.get("manifest"),
+                "idempotency_key": export.get("idempotency_key"),
+                "created_at": export["created_at"],
+                "updated_at": export["updated_at"]
+            },
+            "is_rerun": result["is_rerun"]
+        })
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error rendering dossier: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/versions/{version_id}/exports")
+async def list_exports_endpoint(
+    version_id: str = Path(...),
+    status: Optional[str] = Query(None, description="Filter by status")
+):
+    """List exports for a report version.
+    
+    - **version_id**: Report version ID
+    - **status**: Optional status filter (draft, rendering, ready, delivered, failed)
+    """
+    db = get_db()
+    
+    exports = await list_exports(db, version_id, status)
+    
+    # Format response
+    result = []
+    for e in exports:
+        result.append({
+            "id": e["_id"],
+            "report_version_id": e["report_version_id"],
+            "export_type": e["export_type"],
+            "template_version": e["template_version"],
+            "status": e["status"],
+            "idempotency_key": e.get("idempotency_key"),
+            "created_at": e["created_at"],
+            "updated_at": e["updated_at"]
+        })
+    
+    return JSONResponse(content={
+        "report_version_id": version_id,
+        "exports": result
+    })
+
