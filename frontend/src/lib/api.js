@@ -18,6 +18,7 @@ export const seedPermits = () => api.post('/permits/seed', {});
 // Reports
 export const createReport = (permitId) => api.post('/reports', { permit_id: permitId });
 export const getReport = (id) => api.get(`/reports/${id}`);
+export const getReportByPermit = (permitId) => api.get(`/reports/by-permit/${permitId}`);
 
 // Report Versions
 export const createReportVersion = (reportId) => api.post(`/reports/${reportId}/versions`);

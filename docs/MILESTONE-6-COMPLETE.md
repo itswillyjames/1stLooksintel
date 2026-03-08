@@ -5,6 +5,40 @@
 **Backend Tests:** 40/40 passing  
 **Frontend Lint:** No issues
 
+## Milestone 6.1 Patch: State Persistence
+
+**Date:** 2025-01-XX
+
+### Changes
+
+1. **No auto-creation of versions on navigation**
+   - Previously: Navigating to a permit would create a new version each time
+   - Now: Uses existing `report.active_version_id` when returning to a permit
+
+2. **Load existing report on mount**
+   - New API endpoint: `GET /api/reports/by-permit/{permit_id}`
+   - On permit detail load, fetches existing report (if any) instead of requiring creation
+
+3. **Current Version display**
+   - Shows "Current Version" box with version number, status, and ID
+   - Clear CTA when no version exists: "No active version. Click Create New Version..."
+
+4. **Export selection state persists across tabs**
+   - Selected export is highlighted with checkmark and blue border
+   - Preview auto-loads the first ready export when version is loaded
+   - Switching tabs preserves the selected export preview
+
+### Backend Change (minimal)
+
+Added one read-only endpoint:
+```
+GET /api/reports/by-permit/{permit_id}
+```
+Returns existing report for permit, or 404 if none exists.
+
+---
+
+
 ---
 
 ## Summary

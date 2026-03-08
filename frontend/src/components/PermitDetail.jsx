@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, FileText, Play, RefreshCw, Users, FileOutput, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
-  createReport, getReport, createReportVersion, getReportVersion,
+  createReport, getReport, getReportByPermit, createReportVersion, getReportVersion,
   runScopeSummary, getStageAttempts, getStageAttempt,
   getEntitySuggestions, extractEntities,
   renderDossier, listExports, getExportHtml
@@ -30,16 +30,42 @@ export function PermitDetail({ permit, onBack }) {
   const [entitySuggestions, setEntitySuggestions] = useState([]);
   const [exports, setExports] = useState([]);
   const [exportHtml, setExportHtml] = useState(null);
+  const [selectedExportId, setSelectedExportId] = useState(null);
   
   const [scopeIdempotencyKey, setScopeIdempotencyKey] = useState('');
   const [exportIdempotencyKey, setExportIdempotencyKey] = useState('');
   const [lastRunResult, setLastRunResult] = useState(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   
   const { loading, error, execute, clearError } = useApiCall();
 
-  // Load existing report if any
+  // Load existing report on mount (don't auto-create)
+  const loadExistingReport = useCallback(async () => {
+    setInitialLoading(true);
+    try {
+      const response = await getReportByPermit(permit.id);
+      const reportData = response.data;
+      setReport(reportData);
+      
+      // If there's an active version, load it
+      if (reportData.active_version_id) {
+        const versionResponse = await getReportVersion(reportData.active_version_id);
+        setReportVersion(versionResponse.data);
+        setScopeIdempotencyKey(generateIdempotencyKey());
+        setExportIdempotencyKey(generateIdempotencyKey());
+      }
+    } catch (err) {
+      // 404 is expected if no report exists - that's fine
+      if (err.response?.status !== 404) {
+        console.error('Error loading report:', err);
+      }
+    } finally {
+      setInitialLoading(false);
+    }
+  }, [permit.id]);
+
   useEffect(() => {
-    // Reset state when permit changes
+    // Reset all state when permit changes
     setReport(null);
     setReportVersion(null);
     setStageAttempts([]);
@@ -47,10 +73,12 @@ export function PermitDetail({ permit, onBack }) {
     setEntitySuggestions([]);
     setExports([]);
     setExportHtml(null);
+    setSelectedExportId(null);
     setLastRunResult(null);
-    setScopeIdempotencyKey(generateIdempotencyKey());
-    setExportIdempotencyKey(generateIdempotencyKey());
-  }, [permit.id]);
+    
+    // Load existing report (if any)
+    loadExistingReport();
+  }, [permit.id, loadExistingReport]);
 
   const handleCreateReport = async () => {
     await execute(() => createReport(permit.id), {
@@ -67,10 +95,18 @@ export function PermitDetail({ permit, onBack }) {
     await execute(() => createReportVersion(report.id), {
       onSuccess: (data) => {
         setReportVersion(data);
+        // Update report's active_version_id locally
+        setReport(prev => ({ ...prev, active_version_id: data.id }));
         setLastRunResult({ type: 'version', message: 'Version created with permit snapshot' });
         // Reset idempotency keys for new version
         setScopeIdempotencyKey(generateIdempotencyKey());
         setExportIdempotencyKey(generateIdempotencyKey());
+        // Clear old data
+        setStageAttempts([]);
+        setExports([]);
+        setEntitySuggestions([]);
+        setExportHtml(null);
+        setSelectedExportId(null);
       },
       successMessage: 'Report version created',
     });
@@ -103,13 +139,13 @@ export function PermitDetail({ permit, onBack }) {
     });
   };
 
-  const fetchStageAttempts = async () => {
+  const fetchStageAttempts = useCallback(async () => {
     if (!reportVersion) return;
     await execute(() => getStageAttempts(reportVersion.id), {
       onSuccess: (data) => setStageAttempts(data.stage_attempts || []),
       showSuccessToast: false,
     });
-  };
+  }, [reportVersion, execute]);
 
   const handleViewAttempt = async (attemptId) => {
     await execute(() => getStageAttempt(attemptId), {
@@ -129,13 +165,13 @@ export function PermitDetail({ permit, onBack }) {
     });
   };
 
-  const fetchEntitySuggestions = async () => {
+  const fetchEntitySuggestions = useCallback(async () => {
     if (!reportVersion) return;
     await execute(() => getEntitySuggestions(reportVersion.id, ''), {
       onSuccess: (data) => setEntitySuggestions(data.suggestions || []),
       showSuccessToast: false,
     });
-  };
+  }, [reportVersion, execute]);
 
   const handleRenderExport = async () => {
     if (!reportVersion) return;
@@ -143,36 +179,53 @@ export function PermitDetail({ permit, onBack }) {
     
     await execute(() => renderDossier(reportVersion.id, 'v1', key), {
       onSuccess: (data) => {
+        const exportId = data.export?.id;
         if (data.is_rerun) {
           setLastRunResult({ 
             type: 'export_rerun', 
             isRerun: true,
             message: '↩ Reused existing export (idempotent)',
-            exportId: data.export?.id
+            exportId
           });
         } else {
           setLastRunResult({ 
             type: 'export_new', 
             isRerun: false,
             message: '✓ New dossier exported',
-            exportId: data.export?.id
+            exportId
           });
         }
+        setSelectedExportId(exportId);
         fetchExports();
+        // Auto-load the preview
+        if (exportId) {
+          handlePreviewExport(exportId);
+        }
       },
       successMessage: data => data.is_rerun ? 'Reused existing export' : 'Dossier exported',
     });
   };
 
-  const fetchExports = async () => {
+  const fetchExports = useCallback(async () => {
     if (!reportVersion) return;
     await execute(() => listExports(reportVersion.id), {
-      onSuccess: (data) => setExports(data.exports || []),
+      onSuccess: (data) => {
+        const exportsList = data.exports || [];
+        setExports(exportsList);
+        // Auto-load preview for the first ready export (if no export is selected yet)
+        if (!selectedExportId && exportsList.length > 0) {
+          const firstReady = exportsList.find(e => e.status === 'ready');
+          if (firstReady) {
+            handlePreviewExport(firstReady.id);
+          }
+        }
+      },
       showSuccessToast: false,
     });
-  };
+  }, [reportVersion, execute, selectedExportId]);
 
   const handlePreviewExport = async (exportId) => {
+    setSelectedExportId(exportId);
     await execute(() => getExportHtml(exportId), {
       onSuccess: (data) => setExportHtml(data),
       showSuccessToast: false,
@@ -186,7 +239,7 @@ export function PermitDetail({ permit, onBack }) {
       fetchEntitySuggestions();
       fetchExports();
     }
-  }, [reportVersion?.id]);
+  }, [reportVersion?.id, fetchStageAttempts, fetchEntitySuggestions, fetchExports]);
 
   return (
     <div className="space-y-4" data-testid="permit-detail">
@@ -270,39 +323,63 @@ export function PermitDetail({ permit, onBack }) {
             Report
           </CardTitle>
           <CardDescription>
-            {report 
-              ? `Report ID: ${report.id.slice(0, 8)}... • Status: ${report.status}`
-              : 'No report created yet'}
+            {initialLoading 
+              ? 'Loading...'
+              : report 
+                ? `Report ID: ${report.id.slice(0, 8)}... • Status: ${report.status}`
+                : 'No report created yet'}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-2">
-            {!report ? (
-              <Button 
-                onClick={handleCreateReport} 
-                disabled={loading}
-                data-testid="create-report-btn"
-              >
-                Create Report
-              </Button>
-            ) : (
-              <>
-                <Button 
-                  onClick={handleCreateVersion} 
-                  disabled={loading}
-                  variant={reportVersion ? 'outline' : 'default'}
-                  data-testid="create-version-btn"
-                >
-                  {reportVersion ? 'Create New Version' : 'Create Version'}
-                </Button>
-                {reportVersion && (
-                  <Badge variant="secondary" className="self-center">
-                    v{reportVersion.version} • {reportVersion.status}
-                  </Badge>
+          {initialLoading ? (
+            <div className="text-sm text-muted-foreground">Loading existing report...</div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex gap-2 items-center flex-wrap">
+                {!report ? (
+                  <Button 
+                    onClick={handleCreateReport} 
+                    disabled={loading}
+                    data-testid="create-report-btn"
+                  >
+                    Create Report
+                  </Button>
+                ) : (
+                  <>
+                    <Button 
+                      onClick={handleCreateVersion} 
+                      disabled={loading}
+                      variant="outline"
+                      data-testid="create-version-btn"
+                    >
+                      Create New Version
+                    </Button>
+                  </>
                 )}
-              </>
-            )}
-          </div>
+              </div>
+              
+              {/* Current Version Display */}
+              {report && reportVersion && (
+                <div className="p-3 bg-muted/30 rounded-lg" data-testid="current-version-info">
+                  <Label className="text-xs text-muted-foreground">Current Version</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant="default">v{reportVersion.version}</Badge>
+                    <Badge variant="secondary">{reportVersion.status}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      ID: {reportVersion.id.slice(0, 8)}...
+                    </span>
+                  </div>
+                </div>
+              )}
+              
+              {/* No Version Prompt */}
+              {report && !reportVersion && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                  No active version. Click "Create New Version" to start analyzing this permit.
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -564,14 +641,21 @@ export function PermitDetail({ permit, onBack }) {
                     {exports.map((exp) => (
                       <div 
                         key={exp.id}
-                        className="flex items-center justify-between p-3 border rounded-lg"
+                        className={`flex items-center justify-between p-3 border rounded-lg ${
+                          selectedExportId === exp.id ? 'border-primary bg-primary/5' : ''
+                        }`}
                         data-testid={`export-row-${exp.id}`}
                       >
-                        <div>
-                          <p className="font-medium">{exp.export_type}</p>
-                          <p className="text-xs text-muted-foreground">
-                            Template: {exp.template_version} • {new Date(exp.created_at).toLocaleString()}
-                          </p>
+                        <div className="flex items-center gap-2">
+                          {selectedExportId === exp.id && (
+                            <CheckCircle className="h-4 w-4 text-primary" />
+                          )}
+                          <div>
+                            <p className="font-medium">{exp.export_type}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Template: {exp.template_version} • {new Date(exp.created_at).toLocaleString()}
+                            </p>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant={exp.status === 'ready' ? 'default' : 'secondary'}>
@@ -579,12 +663,12 @@ export function PermitDetail({ permit, onBack }) {
                           </Badge>
                           {exp.status === 'ready' && (
                             <Button 
-                              variant="outline" 
+                              variant={selectedExportId === exp.id ? 'default' : 'outline'}
                               size="sm"
                               onClick={() => handlePreviewExport(exp.id)}
                               data-testid={`preview-export-btn-${exp.id}`}
                             >
-                              Preview
+                              {selectedExportId === exp.id ? 'Selected' : 'Preview'}
                             </Button>
                           )}
                         </div>
@@ -602,7 +686,9 @@ export function PermitDetail({ permit, onBack }) {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Dossier Preview</CardTitle>
                 <CardDescription>
-                  {exportHtml ? 'HTML dossier rendered below' : 'Click Preview on an export to view'}
+                  {selectedExportId 
+                    ? `Viewing export: ${selectedExportId.slice(0, 8)}...`
+                    : 'Click Preview on an export to view'}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -617,7 +703,7 @@ export function PermitDetail({ permit, onBack }) {
                   </div>
                 ) : (
                   <div className="h-64 flex items-center justify-center text-muted-foreground">
-                    No preview available. Render an export first.
+                    No preview available. Render an export first, then click "Preview".
                   </div>
                 )}
               </CardContent>

@@ -60,6 +60,27 @@ async def create_report_endpoint(request: ReportCreate):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+
+@router.get("/by-permit/{permit_id}")
+async def get_report_by_permit_endpoint(permit_id: str = Path(...)):
+    """Get report for a permit (if exists).
+    
+    Returns the report with active_version_id if one exists.
+    Returns 404 if no report exists for this permit.
+    """
+    db = get_db()
+    report = await db.reports.find_one({"permit_id": permit_id})
+    
+    if not report:
+        raise HTTPException(status_code=404, detail=f"No report found for permit {permit_id}")
+    
+    # Get full report with permit data
+    full_report = await get_report(db, report["_id"], include_permit=True)
+    model = ReportWithPermit(**full_report)
+    return JSONResponse(content=json.loads(model.model_dump_json(by_alias=False)))
+
+
+
 @router.get("/{report_id}")
 async def get_report_endpoint(report_id: str = Path(...)):
     """Get a report by ID with denormalized permit data."""
