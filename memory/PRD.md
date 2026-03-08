@@ -30,7 +30,7 @@
 | 3 | Pipeline Skeleton (scope_summary) | ✅ COMPLETE | Pass | [MILESTONE-3-COMPLETE.md](/app/docs/MILESTONE-3-COMPLETE.md) |
 | 4 | Entity Resolution + Merge/Unmerge | ✅ COMPLETE | Pass | [MILESTONE-4-COMPLETE.md](/app/docs/MILESTONE-4-COMPLETE.md) |
 | 5 | Export HTML Dossier + Manifest | ✅ COMPLETE | Pass | [MILESTONE-5-COMPLETE.md](/app/docs/MILESTONE-5-COMPLETE.md) |
-| 6 | Operator UI Flows | 🔲 PENDING | - | - |
+| 6 | Operator UI Flows | ✅ COMPLETE | Pass | [MILESTONE-6-COMPLETE.md](/app/docs/MILESTONE-6-COMPLETE.md) |
 
 ---
 
@@ -79,11 +79,7 @@
 ## Prioritized Backlog
 
 ### P0 - Critical Path
-- **Milestone 6:** Operator UI Flows
-  - Permit list with filtering
-  - Report control panel
-  - Entity review interface
-  - Export preview/download
+- ✅ All core milestones complete (1-6)
 
 ### P1 - Important
 - Additional pipeline stages (beyond scope_summary)
@@ -95,6 +91,7 @@
 - Expanded seed data (20-50 permits)
 - Multi-operator support
 - Notification system
+- State persistence across navigation (report/version retention)
 
 ---
 

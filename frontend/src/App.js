@@ -1,52 +1,39 @@
-import { useEffect } from "react";
+import { useState } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
+import { Toaster } from "@/components/ui/sonner";
+import { PermitsList } from "@/components/PermitsList";
+import { PermitDetail } from "@/components/PermitDetail";
 
 function App() {
+  const [selectedPermit, setSelectedPermit] = useState(null);
+
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+    <div className="min-h-screen bg-background">
+      <Toaster position="top-right" />
+      
+      {/* Header */}
+      <header className="border-b bg-card">
+        <div className="container mx-auto px-4 py-3">
+          <h1 className="text-xl font-bold text-foreground" data-testid="app-title">
+            Permit Intel
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Single-operator permit intelligence workbench
+          </p>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-6">
+        {selectedPermit ? (
+          <PermitDetail 
+            permit={selectedPermit} 
+            onBack={() => setSelectedPermit(null)} 
+          />
+        ) : (
+          <PermitsList onSelectPermit={setSelectedPermit} />
+        )}
+      </main>
     </div>
   );
 }

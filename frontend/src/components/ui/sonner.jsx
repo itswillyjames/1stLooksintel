@@ -4,7 +4,8 @@ import { Toaster as Sonner, toast } from "sonner"
 const Toaster = ({
   ...props
 }) => {
-  const { theme = "system" } = useTheme()
+  // Don't use next-themes in CRA, default to light
+  const theme = "light"
 
   return (
     <Sonner
