@@ -1,6 +1,6 @@
 """Report API endpoints."""
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -25,6 +25,7 @@ from app.services.report_service import (
 )
 from app.pipeline import run_stage
 from app.pipeline.stages import ScopeSummaryStage
+from app.entities import extract_entities_from_report_version
 
 import logging
 import json
@@ -328,3 +329,100 @@ async def get_stage_attempt_canonical(
             **{k: v for k, v in output.items() if k != "_id"}
         } if output else None
     })
+
+
+# ============================================================================
+# ENTITY RESOLUTION ENDPOINTS
+# ============================================================================
+
+@router.post("/versions/{version_id}/entities/extract")
+async def extract_entities_endpoint(
+    version_id: str = Path(...),
+):
+    """Extract entities from report version.
+    
+    Deterministically extracts entities from:
+    - Permit snapshot (owner_raw, contractor_raw, applicant_raw)
+    - Stage outputs (scope_summary, etc.)
+    
+    Creates entities, aliases, and match suggestions for operator review.
+    
+    - **version_id**: Report version ID
+    
+    Returns:
+        {
+            "created_entities": [entity_ids],
+            "created_aliases": [alias_ids],
+            "suggestions_created": [suggestion_ids],
+            "skipped_locked": [entity_names]
+        }
+    """
+    db = get_db()
+    
+    try:
+        result = await extract_entities_from_report_version(db, version_id)
+        
+        return JSONResponse(content=result)
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error extracting entities: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/versions/{version_id}/entity_suggestions")
+async def get_entity_suggestions_endpoint(
+    version_id: str = Path(...),
+    status: Optional[str] = Query("open")
+):
+    """Get entity match suggestions for review.
+    
+    Lists suggestions generated during entity extraction that require
+    operator review (exact matches with multiple candidates, fuzzy matches).
+    
+    - **version_id**: Report version ID
+    - **status**: Filter by status (default: 'open')
+    
+    Returns:
+        {
+            "suggestions": [
+                {
+                    "id": "...",
+                    "observed_name": "Reliable Builders Inc",
+                    "observed_role": "contractor",
+                    "candidate_entity_ids": ["...", "..."],
+                    "match_type": "exact|fuzzy",
+                    "confidence": 0.95,
+                    "status": "open"
+                }
+            ]
+        }
+    """
+    db = get_db()
+    
+    query = {"report_version_id": version_id}
+    if status:
+        query["status"] = status
+    
+    suggestions = await db.entity_match_suggestions.find(query).to_list(length=1000)
+    
+    # Format response
+    result = []
+    for s in suggestions:
+        result.append({
+            "id": s["_id"],
+            "observed_name": s["observed_name"],
+            "observed_role": s["observed_role"],
+            "observed_source": s["observed_source"],
+            "alias_norm": s["alias_norm"],
+            "candidate_entity_ids": s["candidate_entity_ids"],
+            "match_type": s["match_type"],
+            "confidence": s["confidence"],
+            "status": s["status"],
+            "created_at": s["created_at"],
+            "updated_at": s["updated_at"]
+        })
+    
+    return JSONResponse(content={"suggestions": result})
+

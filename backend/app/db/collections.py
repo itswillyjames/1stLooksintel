@@ -9,7 +9,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Collection names (all 23)
+# Collection names (all 24 - added entity_match_suggestions)
 COLLECTIONS = [
     "permits",
     "permit_sources",
@@ -34,6 +34,7 @@ COLLECTIONS = [
     "export_events",
     "report_outcomes",
     "comparables",
+    "entity_match_suggestions",  # NEW for M4
 ]
 
 
@@ -135,5 +136,10 @@ async def create_indexes(db: AsyncIOMotorDatabase):
     
     # 23. comparables
     await db.comparables.create_index([("report_version_id", 1)])
+    
+    # 24. entity_match_suggestions (NEW for M4)
+    await db.entity_match_suggestions.create_index([("report_version_id", 1)])
+    await db.entity_match_suggestions.create_index([("status", 1)])
+    await db.entity_match_suggestions.create_index([("alias_norm", 1)])
     
     logger.info("All indexes created successfully")

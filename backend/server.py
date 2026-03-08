@@ -11,6 +11,7 @@ from app.db.collections import create_indexes
 from app.api.permits import router as permits_router
 from app.api.reports import router as reports_router
 from app.api.pipeline import router as pipeline_router
+from app.api.entities import router as entities_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -50,6 +51,7 @@ async def root():
 api_router.include_router(permits_router)
 api_router.include_router(reports_router)
 api_router.include_router(pipeline_router)
+api_router.include_router(entities_router)
 
 # Include the API router in the main app
 app.include_router(api_router)
