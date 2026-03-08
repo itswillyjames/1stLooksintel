@@ -101,8 +101,30 @@ class ScopeSummaryOutput(BaseModel):
 
 ### 3. API Endpoints
 
-#### POST /api/pipeline/report_versions/{version_id}/stages/scope_summary/run
+Two route sets are provided for convenience:
+
+#### A) Pipeline Routes (`/api/pipeline/*`)
+Original routes under the pipeline namespace:
+
+**POST /api/pipeline/report_versions/{version_id}/stages/scope_summary/run**
 Run the scope_summary stage for a report version.
+
+**GET /api/pipeline/stage_attempts/{attempt_id}**
+Retrieve a stage attempt by ID, including its output.
+
+#### B) Canonical Routes (`/api/reports/*`)
+Cleaner aliases for the same functionality:
+
+**POST /api/reports/versions/{version_id}/stages/scope_summary/run**
+Alias to the pipeline route (same handler).
+
+**GET /api/reports/stage_attempts/{attempt_id}**
+Alias to the pipeline route (same handler).
+
+**GET /api/reports/versions/{version_id}/stage_attempts**
+List all stage attempts for a report version (existed from Milestone 1).
+
+**Note:** Both route sets point to the same handlers and behave identically. Use whichever fits your URL structure preference.
 
 **Request:**
 ```json
@@ -272,7 +294,7 @@ tests/test_pipeline.py::TestPipelineOrchestration::test_semantic_validation_fail
 
 ### Manual API Verification ✅
 
-#### 1. Stage Execution
+#### 1. Stage Execution (Pipeline Route)
 ```bash
 curl -X POST /api/pipeline/report_versions/{version_id}/stages/scope_summary/run \
   -H "Content-Type: application/json" \
@@ -298,9 +320,9 @@ Response:
 }
 ```
 
-#### 2. Idempotent Rerun
+#### 2. Idempotent Rerun (Canonical Route)
 ```bash
-curl -X POST /api/pipeline/report_versions/{version_id}/stages/scope_summary/run \
+curl -X POST /api/reports/versions/{version_id}/stages/scope_summary/run \
   -H "Content-Type: application/json" \
   -d '{"idempotency_key": "test-1"}'  # Same key
 
@@ -311,7 +333,31 @@ Response:
 }
 ```
 
-#### 3. Event Emission Verified
+#### 3. Get Stage Attempt (Both Routes Work)
+```bash
+# Pipeline route
+curl /api/pipeline/stage_attempts/{attempt_id}
+
+# Canonical route  
+curl /api/reports/stage_attempts/{attempt_id}
+
+# Both return same result
+```
+
+#### 4. List Stage Attempts
+```bash
+curl /api/reports/versions/{version_id}/stage_attempts
+
+Response:
+{
+  "report_version_id": "8f7d82ce-...",
+  "stage_attempts": [
+    {"stage_name": "scope_summary", "status": "succeeded", ...}
+  ]
+}
+```
+
+#### 5. Event Emission Verified
 ```python
 db.stage_events.find({"stage_attempt_id": "31132ecb-..."})
 
@@ -332,7 +378,10 @@ Results:
 - [x] Rerun with same key returns existing attempt/output
 - [x] State machine integrated: `queued → running → succeeded/failed`
 - [x] Event emission for all transitions
-- [x] API endpoints: `POST .../stages/scope_summary/run`, `GET .../stage_attempts/{id}`
+- [x] API endpoints: 
+  - Pipeline routes: `POST /api/pipeline/report_versions/{id}/stages/scope_summary/run`, `GET /api/pipeline/stage_attempts/{id}`
+  - Canonical routes: `POST /api/reports/versions/{id}/stages/scope_summary/run`, `GET /api/reports/stage_attempts/{id}`
+  - List endpoint: `GET /api/reports/versions/{id}/stage_attempts`
 - [x] Tests: 9/9 passing (success, idempotency, validation, events)
 - [x] No new status enums added (used existing from Milestone 2)
 

@@ -155,6 +155,8 @@ async def get_stage_attempts(
         {"report_version_id": report_version_id}
     ).sort("created_at", 1)
     
+    attempts = await cursor.to_list(length=100)
+    return attempts
 
 
 async def transition_report_status(
